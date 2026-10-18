@@ -56,22 +56,22 @@ def test_full_scan_equals_brute_force(ds, queries, setup):
     for q in queries:
         res = search(blocks, q, meta, "none")
         ids, dist = brute_force(ds, q)
-        assert np.array_equal(res.rows_ids, ids)
+        assert np.array_equal(res.row_ids, ids)
         assert np.allclose(res.distances, dist)
 
 
 def test_full_scan_touches_every_block(queries, setup):
     _, blocks, meta = setup
     res = search(blocks, queries[0], meta, "none")
-    assert res.block_touch_count == len(blocks)
-    assert res.row_read == N
+    assert res.blocks_touched == len(blocks)
+    assert res.rows_read == N
 
 
 def test_results_are_sorted_and_have_k_rows(queries, setup):
     _, blocks, meta = setup
     for q in queries:
         res = search(blocks, q, meta, "none")
-        assert len(res.rows_ids) == len(res.distances) == K
+        assert len(res.row_ids) == len(res.distances) == K
         assert np.all(np.diff(res.distances) >= 0)
 
 
@@ -81,7 +81,7 @@ def test_fewer_matches_than_k_returns_all_matches(ds, setup):
     rows = np.flatnonzero(ds.tenant_ids == tenant)
     q = Query(ds.vectors[0], np.array([tenant]), len(rows) / N)
     res = search(blocks, q, meta, "tenant_set", k=len(rows) + 50)
-    assert np.array_equal(np.sort(res.rows_ids), rows)
+    assert np.array_equal(np.sort(res.row_ids), rows)
 
 
 
@@ -92,7 +92,7 @@ def test_every_pruner_returns_the_exact_top_k(queries, setup, pruner):
     for q in queries:
         exact = search(blocks, q, meta, "none")
         res = search(blocks, q, meta, pruner)
-        assert np.array_equal(res.rows_ids, exact.rows_ids)
+        assert np.array_equal(res.row_ids, exact.row_ids)
 
 
 @pytest.mark.parametrize("pruner", sorted(PRUNERS))
@@ -101,8 +101,8 @@ def test_early_stop_returns_the_exact_top_k(queries, setup, pruner):
     for q in queries:
         exact = search(blocks, q, meta, "none")
         res = search(blocks, q, meta, pruner, early_stop=True)
-        assert np.array_equal(res.rows_ids, exact.rows_ids)
-        assert res.block_touch_count <= search(blocks, q, meta, pruner).block_touch_count
+        assert np.array_equal(res.row_ids, exact.row_ids)
+        assert res.blocks_touched <= search(blocks, q, meta, pruner).blocks_touched
 
 
 @pytest.mark.parametrize("pruner", ["tenant_set_by_centroid", "tenant_set_by_bound"])
@@ -114,8 +114,8 @@ def test_early_stop_is_exact_when_it_really_skips_blocks(pruner):
     for q in make_queries(data, num_queries=30):
         exact = search(blocks, q, meta, "none")
         res = search(blocks, q, meta, pruner, early_stop=True)
-        assert np.array_equal(res.rows_ids, exact.rows_ids)
-        skipped += search(blocks, q, meta, pruner).block_touch_count - res.block_touch_count
+        assert np.array_equal(res.row_ids, exact.row_ids)
+        skipped += search(blocks, q, meta, pruner).blocks_touched - res.blocks_touched
     assert skipped > 0
 
 
@@ -133,8 +133,8 @@ def test_early_stop_scans_a_block_whose_bound_is_below_the_kth_distance(pruner):
     blocks, meta = line_blocks([1.0, 3.0], [2.8, 2.9], [3.5, 3.6])
     q = Query(np.zeros(1, dtype=np.float32), np.array([0]), 1.0)
     res = search(blocks, q, meta, pruner, k=2, early_stop=True)
-    assert res.rows_ids.tolist() == [0, 2]
-    assert res.block_touch_count == 2
+    assert res.row_ids.tolist() == [0, 2]
+    assert res.blocks_touched == 2
 
 
 @pytest.mark.parametrize("pruner", sorted(PRUNERS))
@@ -142,7 +142,7 @@ def test_early_stop_waits_until_it_has_k_results(pruner):
     blocks, meta = line_blocks([1.0], [2.8, 2.9])
     q = Query(np.zeros(1, dtype=np.float32), np.array([0]), 1.0)
     res = search(blocks, q, meta, pruner, k=2, early_stop=True)
-    assert res.rows_ids.tolist() == [0, 1]
+    assert res.row_ids.tolist() == [0, 1]
 
 
 @pytest.mark.parametrize("pruner", ["zonemap", "tenant_set", "tenant_set_by_centroid", "tenant_set_by_bound"])
@@ -194,10 +194,10 @@ def test_max_blocks_scans_only_the_first_m_blocks(ds, queries, setup, m):
     for q in queries:
         order = PRUNERS["tenant_set_by_centroid"](q, meta)
         res = search(blocks, q, meta, "tenant_set_by_centroid", max_blocks=m)
-        assert res.block_touch_count == min(m, len(order))
+        assert res.blocks_touched == min(m, len(order))
         rows = np.concatenate([blocks[b].row_ids for b in order[:m]])
         ids, _ = brute_force(ds, q, rows=rows)
-        assert np.array_equal(res.rows_ids, ids)
+        assert np.array_equal(res.row_ids, ids)
 
 
 def test_max_blocks_larger_than_needed_is_exact(queries, setup):
@@ -205,7 +205,7 @@ def test_max_blocks_larger_than_needed_is_exact(queries, setup):
     for q in queries:
         exact = search(blocks, q, meta, "none")
         res = search(blocks, q, meta, "tenant_set_by_centroid", max_blocks=len(blocks))
-        assert np.array_equal(res.rows_ids, exact.rows_ids)
+        assert np.array_equal(res.row_ids, exact.row_ids)
 
 
 
@@ -216,8 +216,8 @@ def test_counters_match_the_blocks_scanned(queries, setup, pruner):
     for q in queries:
         res = search(blocks, q, meta, pruner)
         scanned = PRUNERS[pruner](q, meta)
-        assert res.block_touch_count == len(scanned)
-        assert res.row_read == sum(len(blocks[b].row_ids) for b in scanned)
+        assert res.blocks_touched == len(scanned)
+        assert res.rows_read == sum(len(blocks[b].row_ids) for b in scanned)
         assert res.distances_computed == sum(int(np.isin(blocks[b].tenant_ids, q.tenants).sum()) for b in scanned)
 
 
@@ -233,4 +233,4 @@ def test_ties_are_broken_by_row_id():
     for pruner in PRUNERS:
         for early_stop in (False, True):
             res = search(blocks, q, meta, pruner, k=2, early_stop=early_stop)
-            assert sorted(res.rows_ids.tolist()) == [0, 1], (pruner, early_stop)
+            assert sorted(res.row_ids.tolist()) == [0, 1], (pruner, early_stop)

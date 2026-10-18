@@ -10,10 +10,10 @@ from src.metadata import BlockMetadata,lower_bound
 
 @dataclass
 class Result:
-    rows_ids: np.ndarray
+    row_ids: np.ndarray
     distances: np.ndarray
-    block_touch_count: int
-    row_read:int
+    blocks_touched: int
+    rows_read:int
     distances_computed:int
 
 def all_blocks(query:Query,meta:BlockMetadata):
@@ -51,8 +51,8 @@ def search_block(block:Block,query:Query,k:int):
     top = np.lexsort((rows, dist))[:k]
     return dist[top],block.row_ids[mask][top],len(rows)
 
-def search(blocks:List[Block],query:Query,meta:BlockMetadata,purner:str,k:int,max_blocks:int = None , early_stop:bool = False):
-    block_ids = PRUNERS[purner](query,meta)[:max_blocks]
+def search(blocks:List[Block],query:Query,meta:BlockMetadata,pruner:str,k:int,max_blocks:int = None , early_stop:bool = False):
+    block_ids = PRUNERS[pruner](query,meta)[:max_blocks]
     bounds  = lower_bound(meta,query.vector) ** 2 if early_stop else None
     best_dist = np.empty(0,dtype=np.float32)
     best_ids = np.empty(0,dtype=np.int64)
