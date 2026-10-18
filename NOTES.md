@@ -41,9 +41,9 @@ boundaries are approximate.
 | 18 Oct | 15:21 | 15:45 | 0 h 24 min | Experiments E1–E4: predictions and reproducibility | Predictions for H3 and E1–E4; `reproducibility.py` |
 | 18 Oct | 15:45 | 16:00 | 0 h 15 min | Plots | `plots.py` and its tests |
 | 18 Oct | 16:00 | 16:46 | 0 h 46 min | Experiments E1–E4: script, runs, results | `experiments.py`; two full runs with identical hashes; results and verdicts logged |
-| 18 Oct | 16:46 | 17:05 | 0 h 19 min | Review fixes, README, final checks | Notes corrected after review; README written; everything committed |
-| | | | **5 h 05 min** | **Core task total** | Within the 6 h budget |
-| | | | | Verification beyond the budget | None |
+| 18 Oct | 16:46 | 17:16 | 0 h 30 min | Review fixes, README, final checks | Notes corrected after review; README written; fresh-clone check passed; everything committed |
+| | | | **5 h 16 min** | **Core task total** | Within the 6 h budget |
+| | | | | Verification beyond the budget | None needed: every check, including the fresh-clone run, fitted inside the budget |
 
 ---
 
@@ -676,6 +676,10 @@ experiment script computes them.
 - Done: the notes file is renamed `NOTES.md` and committed with `results/` and `plots/` from the
   run on commit `7dcef8e`. All 252 tests pass, and every link in the README points to a file in
   the repository.
+- Final check (D10): a fresh clone of commit `2afc6c8`, installed with `uv sync --frozen`, passed
+  all 252 tests with the README's commands. A full run of `experiments.py` in that clone gave
+  results identical to the committed ones for all five files (run 3, section 10). Every D10 check
+  has now passed.
 
 ---
 
@@ -875,6 +879,7 @@ hashes (D10).
 |---|---|---|---|---|---|---|
 | 1 | 18 Oct, 16:25–16:32 | `experiments.py`, then `plots.py`, with the project's `.venv` Python (same environment as `uv run python …`, section 6) | `7dcef8e`, clean | Windows 11, 1 thread; other load not recorded | e1_e2_per_query `2069b812bc63467c`, e1_e2_summary `d62291b3c49d847e`, e3_per_query `504ddde5b405146e`, e4_per_query `49f64d9e33102acf`, e4_metadata_size `5a4865092c876093` | 450 s. The results in sections 3 and 8. |
 | 2 | 18 Oct, 16:35–16:42 | `.venv\Scripts\python experiments.py`, run from a scratch folder so it did not overwrite run 1 | `7dcef8e`, clean | Windows 11, 1 thread; the test suite ran at the same time for about 2 minutes | All five identical to run 1 | 444 s. D10 check at full size: passed. |
+| 3 | 18 Oct, 17:02–17:12 | Fresh `git clone`, `uv sync --frozen`, `uv run --frozen pytest` (252 passed), `uv run --frozen python experiments.py` | `2afc6c8` (same code as `7dcef8e`), clean | Windows 11, 1 thread; the test suite ran at the same time | All five identical to run 1 | 610 s. D10 fresh-clone check: passed. |
 
 Latency variation across runs with the same configuration:
 

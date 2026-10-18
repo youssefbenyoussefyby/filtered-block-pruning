@@ -125,8 +125,9 @@ from the repository root.
 - **One thread** for numpy and scikit-learn.
 - **Locked dependencies** in `uv.lock`, with exact pins in `pyproject.toml`.
 - **Deterministic ties:** ties in the top-k are broken by row id.
-- **Checked:** two full runs on commit `7dcef8e` gave identical results files once timing
-  columns are removed. The hashes are in [NOTES.md](NOTES.md), section 10.
+- **Checked:** two full runs on commit `7dcef8e`, and a third from a fresh clone installed with
+  `uv sync --frozen`, gave identical results files once timing columns are removed. The hashes
+  are in [NOTES.md](NOTES.md), section 10.
 - **Timing noise:** median latencies moved by 1.9% between the two runs, 9% at most, so speedup
   differences under about 6% are noise.
 - **The committed `results/` and `plots/`** come from the run on commit `7dcef8e`.
