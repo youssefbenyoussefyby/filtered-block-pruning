@@ -11,49 +11,199 @@ full scan. Everything is synthetic, in memory and single-threaded.
 The full working log is in [NOTES.md](NOTES.md). It has the hypotheses with predictions written
 before each run, the design decisions, and every result and surprise.
 
-## Results in one minute
+## Summary
 
 Setup: 200,000 rows of 64 dimensions, 100 tenants, blocks of 5,000 rows (40 blocks), and 200
 queries per configuration.
+- **Layouts:** rows are stored in one of three orders: `random`, `tenant_sorted`, or
+  `vector_clustered` (by k-means).
+- **`rho`** sets how strongly each tenant's rows are tied to its 3 home clusters, from 0 (not at
+  all) to 1 (always).
 
-- **The layout decides whether attribute pruning works.**
-  - The same exact metadata prunes nothing on a `random` layout: 100% of blocks are scanned for
-    every filter.
-  - On `tenant_sorted` it scans 2.9% / 8.2% / 27.6% / 58.5% of blocks for 1 / 3 / 10 / 25 tenants.
-    That is 2.3–2.9 times the selectivity, because a block holds about 3 tenants and the tenants
-    in an IN-list rarely share one.
-  - On `tenant_sorted` the 8-byte zone map is exactly as good as the exact tenant set.
-  - Recall is 1.00 everywhere.
-- **Filter locality and similarity locality conflict.**
-  - `vector_clustered` prunes almost nothing by tenant when tenants are only loosely tied to
-    clusters (`rho` = 0.8). It scans 17% of blocks for one tenant even when every row is in its
-    tenant's home clusters (`rho` = 1.0).
-  - But ranking its blocks by centroid finds 90% of the true top-10 after 3–4 blocks (7.5–10%).
-  - `tenant_sorted` needs 13–17% of blocks for the same recall and is exact at 23%.
-  - `random` gives no trade-off at all: recall ≈ fraction of blocks scanned.
-- **In memory, latency hides most of the saving.** 40 times fewer blocks gives only 4.3–10.6
-  times lower latency. Skipping a block saves about 0.06 ms. Most of the time is distance work
-  on matching rows, which every lossless method does.
-- **The recall curve has a long tail.** On `vector_clustered`, recall reaches 0.9 after 3 blocks
-  but only 0.98 after 24.
-- **The lossless early stop rarely helps.** It uses the centroid and radius lower bound to skip
-  blocks. It skips 13% of the remaining blocks on `vector_clustered` at `rho` = 0.8 and nothing
-  elsewhere, with recall 1.00. Ordering blocks by that bound is far worse than ordering them by
-  centroid distance: it needs 24 blocks for recall 0.9.
-- **Block size trades invocations against wasted reads.**
-  - From 1k to 20k rows per block, broad queries go from 71.5 to 7.0 blocks touched.
-  - Selective queries go from reading 3.1 to 46.3 times the rows they need (68 times in the worst
-    case).
-  - Metadata shrinks from 108 KB to 5.4 KB.
+Details are under [What is compared](#what-is-compared).
 
-| | |
+1. **Attribute pruning works only when the layout keeps each tenant's rows together.** On
+   `tenant_sorted` an exact tenant filter skips up to 97% of blocks; on `random` it skips none.
+2. **The best layout for the filter is the worst for similarity, and the other way round.**
+3. **Ranking blocks by centroid gives a cheap approximate answer** on `vector_clustered`: 90% of
+   the true top-10 after 3–4 of 40 blocks. The last 10% costs most of the blocks.
+4. **The provable lower bound is too loose to help much** on this data.
+5. **In memory, latency falls far less than blocks touched.** Blocks touched, which means
+   invocations, is the cost to report.
+6. **Block size trades invocations against wasted reads**, and the best size depends on the mix
+   of queries.
+
+## Main results
+
+### E1: How many blocks does attribute pruning skip?
+
+![E1: blocks scanned](plots/e1_blocks_scanned.png)
+
+The table shows the fraction of the 40 blocks scanned with uniform tenants. Each tenant holds 1%
+of the rows, so filters on 1 / 3 / 10 / 25 tenants match 1 / 3 / 10 / 25% of rows.
+
+| Layout and metadata | 1 tenant | 3 | 10 | 25 |
+|---|---|---|---|---|
+| `random`, `zonemap` or `tenant_set` | 100% | 100% | 100% | 100% |
+| `tenant_sorted`, `zonemap` or `tenant_set` (identical) | 2.9% | 8.2% | 27.6% | 58.5% |
+| `vector_clustered`, `tenant_set`, `rho` = 0.8 | 100% | 100% | 100% | 100% |
+| `vector_clustered`, `tenant_set`, `rho` = 1.0 | 17% | 40% | 82% | 99% |
+| `vector_clustered`, `zonemap`, `rho` = 1.0 | 88% | 100% | 100% | 100% |
+
+With Zipf tenants, `tenant_sorted` scans from 3% to 52% of blocks, going from the most to the
+least selective bucket. Recall@10 is 1.00 in every cell, because both kinds of metadata are
+lossless.
+
+**Interpretation**
+- **The layout decides the saving, not the metadata.** Metadata can only skip a block that holds
+  no matching row. In `random` order every block holds all 100 tenants, so even an exact bitmap
+  skips nothing.
+- **On `tenant_sorted` the cost is 2.3–2.9 times the selectivity,** not "selectivity plus a
+  little". A block holds about 3 tenants, and the tenants in a random IN-list rarely share a
+  block, so each requested tenant costs about one block of its own.
+- **The 8-byte zone map equals the exact bitmap on `tenant_sorted`,** because tenants are
+  contiguous: every tenant inside a block's [min, max] range really is in the block. On the
+  other layouts a block's range covers 88–100 of the 100 tenant ids, so the zone map is useless.
+- **`vector_clustered` scatters each tenant across blocks,** because it keeps similar vectors
+  together. It prunes only when tenants are tied to few clusters (`rho` = 1.0). Even then it
+  scans 17% of blocks for one tenant, against 2.9% on `tenant_sorted`.
+
+### E2: Does latency fall as much as blocks touched?
+
+![E2: latency speedup](plots/e2_speedup.png)
+
+Medians per query, comparing `tenant_set` with the full scan of the same query, on
+`tenant_sorted`:
+
+| Filter | Blocks ratio | Latency speedup | Full scan / pruned |
+|---|---|---|---|
+| Zipf, <0.5% of rows | 40× | 10.6× | 2.67 / 0.25 ms |
+| Uniform, 1 tenant (1%) | 40× | 4.3× | 3.18 / 0.75 ms |
+| Uniform, 3 tenants (3%) | 13.3× | 2.2× | 5.27 / 2.35 ms |
+| Uniform, 10 tenants (10%) | 3.6× | 1.4× | 10.91 / 7.98 ms |
+| Uniform, 25 tenants (25%) | 1.7× | 1.1× | 22.52 / 21.24 ms |
+
+`vector_clustered` at `rho` = 1.0 gets a 2.2–3.4× speedup for 6–7× fewer blocks. On `random`,
+where nothing is pruned, the tenant check costs nothing measurable (1.0×).
+
+**Interpretation**
+- **Skipping a block with no matching row saves only about 0.06 ms in memory,** the cost of
+  checking 5,000 tenant ids. Most of the time goes into distances for matching rows, and every
+  lossless method computes exactly those.
+- **The two cells with 40× fewer blocks confirm this.** The Zipf queries in the <0.5% bucket have
+  a median of 426 matching rows, against 2,000. Their pruned scan is 3 times cheaper (0.25 ms
+  against 0.75 ms), while both full scans cost about the same.
+- **In-memory latency understates the saving.** In a serverless system each skipped block is also
+  a skipped fetch and function invocation, which in-memory timing does not include. Blocks
+  touched is the better cost measure.
+
+### E3: Recall against blocks scanned with similarity ranking
+
+![E3: recall against blocks](plots/e3_recall_vs_blocks.png)
+
+These runs use Zipf tenants. Blocks are first filtered with `tenant_set`, then scanned nearest
+centroid first (or smallest lower bound first), up to a budget of m blocks. The table gives the
+blocks actually scanned, out of 40.
+
+| Layout, block order | `rho` | Recall after 1 block | Blocks scanned for recall ≥ 0.9 | Blocks scanned for recall 1.0 |
+|---|---|---|---|---|
+| `random`, centroid | 0 and 0.8 | 0.03 | 40 (100%) | 40 (100%) |
+| `tenant_sorted`, centroid | 0 | 0.34 | 6.9 (17%) | 9.1 (23%) |
+| `tenant_sorted`, centroid | 0.8 | 0.51 | 5.3 (13%) | 9.1 (23%) |
+| `vector_clustered`, centroid | 0 | 0.63 | 4 (10%) | 40 (100%) |
+| `vector_clustered`, centroid | 0.8 | 0.71 | 3 (7.5%) | 38.5 (96%) |
+| `vector_clustered`, lower bound | 0.8 | 0.05 | 24 (60%) | 38.5 (96%) |
+
+- **On `vector_clustered`, recall climbs fast and then flattens:** it stays at 0.93–0.98 between 8
+  and 24 blocks.
+- **The lossless early stop** skips a block whose lower bound exceeds the current 10th-best
+  distance. Recall stays at 1.00.
+  - On `vector_clustered` at `rho` = 0.8 it scans 83.5% of blocks instead of 96.4%, and computes
+    13.5% fewer distances.
+  - It saves nothing on the other layouts, or at `rho` = 0.
+
+**Interpretation**
+- **Ranking by centroid only helps when a block's centroid says something about its rows.**
+  - On `vector_clustered` it does, so 3–4 blocks hold 90% of the answer.
+  - On `random` every centroid is about the same average, so recall just grows with the share of
+    blocks scanned.
+  - On `tenant_sorted` the filter has already done most of the work: about 9 blocks survive, and
+    scanning them all is exact.
+- **The lower bound `‖q − c‖ − r` is too loose to order blocks.** The 64 true clusters are cut
+  into 40 fixed-size blocks, so a block mixes about 2 clusters. Its radius is then nearly as large
+  as a random block's (about 10.7 against 11.6). In a smaller test, 81–100% of blocks had a bound
+  of 0, so ordering by bound mostly falls back to block-id order.
+- **The early stop can only skip a block whose bound exceeds the 10th-best distance found so
+  far.** That happens on `vector_clustered` at `rho` = 0.8. This is likely because many matching
+  rows sit in the query's own cluster there, which makes the 10th-best distance small (not
+  checked).
+- **The long tail is likely caused by clusters that are split across blocks** (not checked). The
+  blocks holding the last few top-10 rows also hold other clusters, so their centroids sit far
+  from the query.
+
+### E4: Effect of block size
+
+![E4: block size](plots/e4_block_size.png)
+
+These runs use `tenant_sorted` with Zipf tenants and `tenant_set` pruning. The table gives means
+per selectivity bucket.
+
+| Filter matches | Blocks touched, B = 1k / 5k / 20k | Rows read per matching row, 1k / 5k / 20k |
+|---|---|---|
+| <0.5% of rows | 1.4 / 1.0 / 1.0 | 3.1 / 12.0 / 46.3 (worst query: 68) |
+| 0.5–2% | 4.5 / 2.5 / 1.7 | 2.3 / 6.7 / 17.3 |
+| 2–5% | 12.8 / 5.6 / 2.8 | 1.7 / 3.8 / 8.0 |
+| 5–15% | 30.7 / 11.2 / 4.6 | 1.6 / 2.9 / 4.9 |
+| >15% | 71.5 / 20.8 / 7.0 | 1.3 / 2.0 / 2.7 |
+
+Total metadata is 108.2 KB at B = 1k, 21.6 KB at 5k and 5.4 KB at 20k. The centroid and radius
+are 96% of it.
+
+**Interpretation**
+- **Larger blocks waste more rows.** Each requested tenant wastes about one block's worth of rows
+  at its edges.
+- **Selective queries suffer most.** From 1k to 20k they save almost no invocations (1.4 → 1.0)
+  but read 15 times more rows.
+- **Broad queries gain the most from large blocks:** 10 times fewer invocations (71.5 → 7.0) for
+  only twice the reads.
+- **No single block size is best.** The right B depends on the mix of queries. A cost model
+  (invocations × fetch time + bytes read) would choose it.
+
+## Conclusions
+
+**Hypotheses.** Each prediction was written before its experiment ran; details are in
+[NOTES.md](NOTES.md).
+
+| Hypothesis | Verdict |
 |---|---|
-| ![E1: blocks scanned](plots/e1_blocks_scanned.png) | ![E2: latency speedup](plots/e2_speedup.png) |
-| **E1.** Fraction of blocks scanned against filter selectivity, per layout and metadata. | **E2.** Latency speedup (solid) against blocks ratio (dotted), against the full scan of the same query. |
-| ![E3: recall against blocks](plots/e3_recall_vs_blocks.png) | ![E4: block size](plots/e4_block_size.png) |
-| **E3.** Recall@10 against blocks scanned, by centroid order (solid) or lower-bound order (dashed); stars mark the early stop. | **E4.** Blocks touched and read amplification against block size, `tenant_sorted`. |
+| H1: the layout matters more than the metadata | **Supported.** Exact metadata prunes nothing on `random` and up to 97% of blocks on `tenant_sorted`. |
+| H2: filter locality and similarity locality conflict | **Supported.** `tenant_sorted` is best for the filter and `vector_clustered` for similarity; neither is good at both. |
+| H3: combining both kinds of pruning gives a tunable trade-off, whose shape depends on the layout and on `rho` | **Supported for the layout; only partly tested for `rho`.** Only `rho` = 0 and 0.8 were run, and they differ little. |
+
+**What this means for a serverless, block-based vector store:**
+1. **Lay data out by the filter attribute first.** On a tenant-sorted layout, an 8-byte zone map
+   per block gives exact filtered results while touching 3–58% of blocks. An exact tenant bitmap
+   adds nothing there.
+2. **Use similarity ranking as a budget, not as a guarantee.** On a vector-clustered layout, 3–4
+   blocks give recall 0.9. Exact answers need almost every block, and the single-centroid lower
+   bound saves at most 13% of them.
+3. **Neither layout gives both kinds of locality.** A tenant-then-cluster layout, sorted by tenant
+   and clustered inside large tenants, is the natural next step to get both. It was not tested
+   here.
+4. **Measure cost in blocks touched,** not in-memory latency, which hides most of the saving.
+5. **Choose the block size per workload:** small blocks for selective filters, large blocks for
+   broad ones.
+
+**How the predictions did:**
+- **E1 and E4** held to within a few points.
+- **E2** got the direction right (latency falls far less than blocks touched), but not where the
+  gap is largest relative to the blocks ratio.
+- **E3** got the recall curves about right, but wrongly predicted that the early stop would save
+  nothing. That prediction rested on a small test setup that did not carry over to full size.
 
 All numbers per selectivity bucket are in [results/summary_table.md](results/summary_table.md).
+These results come from synthetic, well-separated data held in memory; see
+[Limitations](#limitations).
 
 ## What is compared
 

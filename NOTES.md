@@ -42,7 +42,8 @@ boundaries are approximate.
 | 18 Oct | 15:45 | 16:00 | 0 h 15 min | Plots | `plots.py` and its tests |
 | 18 Oct | 16:00 | 16:46 | 0 h 46 min | Experiments E1–E4: script, runs, results | `experiments.py`; two full runs with identical hashes; results and verdicts logged |
 | 18 Oct | 16:46 | 17:16 | 0 h 30 min | Review fixes, README, final checks | Notes corrected after review; README written; fresh-clone check passed; everything committed |
-| | | | **5 h 16 min** | **Core task total** | Within the 6 h budget |
+| 18 Oct | 17:16 | 17:21 | 0 h 05 min | README: main results, interpretations, conclusions | One section per experiment with its figure, table and interpretation; hypothesis verdicts and practical conclusions |
+| | | | **5 h 21 min** | **Core task total** | Within the 6 h budget |
 | | | | | Verification beyond the budget | None needed: every check, including the fresh-clone run, fitted inside the budget |
 
 ---
@@ -680,6 +681,18 @@ experiment script computes them.
   all 252 tests with the README's commands. A full run of `experiments.py` in that clone gave
   results identical to the committed ones for all five files (run 3, section 10). Every D10 check
   has now passed.
+
+### 17:21: README results and conclusions
+
+- Done: the README now has the main results, interpretations and conclusions.
+  - A short summary comes first.
+  - Each experiment (E1–E4) has its own section with its figure, a table of the main numbers and
+    an interpretation.
+  - A conclusions section gives the verdict on each hypothesis, five practical conclusions, and
+    how the predictions did.
+- All numbers come from sections 3, 8 and 9. Explanations that were not tested (the early stop at
+  `rho` = 0.8, the long tail) are marked "likely … (not checked)", as in section 9. The
+  tenant-then-cluster layout is a suggestion that was not tested, and the README says so.
 
 ---
 
