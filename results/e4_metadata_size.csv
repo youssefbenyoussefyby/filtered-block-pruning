@@ -1,0 +1,4 @@
+block_size,num_blocks,zonemap_bytes_total,tenant_set_bytes_total,centroid_radius_bytes_total
+1000,200,1600,2600,104000
+5000,40,320,520,20800
+20000,10,80,130,5200

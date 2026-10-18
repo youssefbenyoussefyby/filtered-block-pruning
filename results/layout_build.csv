@@ -1,0 +1,9 @@
+dist,rho,layout,num_blocks,build_s
+uniform,0.8,random,40,0.05625379999401048
+uniform,0.8,tenant_sorted,40,0.08005250000860542
+uniform,0.8,vector_clustered,40,0.9905539000174031
+uniform,1.0,vector_clustered,40,1.082376900012605
+zipf,0.8,random,40,0.05287239997414872
+zipf,0.8,tenant_sorted,40,0.07381750002969056
+zipf,0.8,vector_clustered,40,1.0068992000306025
+zipf,1.0,vector_clustered,40,1.010461799975019
