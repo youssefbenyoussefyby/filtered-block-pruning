@@ -41,9 +41,9 @@ boundaries are approximate.
 | 18 Oct | 15:21 | 15:45 | 0 h 24 min | Experiments E1–E4: predictions and reproducibility | Predictions for H3 and E1–E4; `reproducibility.py` |
 | 18 Oct | 15:45 | 16:00 | 0 h 15 min | Plots | `plots.py` and its tests |
 | 18 Oct | 16:00 | 16:46 | 0 h 46 min | Experiments E1–E4: script, runs, results | `experiments.py`; two full runs with identical hashes; results and verdicts logged |
-| 18 Oct | 16:46 | 17:16 | 0 h 30 min | Review fixes, README, final checks | Notes corrected after review; README written; fresh-clone check passed; everything committed |
-| 18 Oct | 17:16 | 17:21 | 0 h 05 min | README: main results, interpretations, conclusions | One section per experiment with its figure, table and interpretation; hypothesis verdicts and practical conclusions |
-| | | | **5 h 21 min** | **Core task total** | Within the 6 h budget |
+| 18 Oct | 16:46 | 17:01 | 0 h 15 min | Review fixes to the notes | E3 budget against blocks scanned, unrounded H1 ratios, commands, trimmed bug reports, time log |
+| 18 Oct | 17:01 | 17:27 | 0 h 26 min | README and final checks | README: summary, main results with interpretations, conclusions, next steps; fresh-clone check passed; everything committed |
+| | | | **5 h 27 min** | **Core task total** | Within the 6 h budget |
 | | | | | Verification beyond the budget | None needed: every check, including the fresh-clone run, fitted inside the budget |
 
 ---
@@ -663,7 +663,7 @@ experiment script computes them.
 - Reproducibility (D10): a second full run on the same commit gave identical hashes for all five
   results files. Median latencies moved by 1.9% on average and by 9% at most (section 10).
 
-### 17:01: review fixes, README, and closing
+### 17:01: review fixes
 
 - Done: the notes were corrected after a review.
   - E3 now separates the budget m from the blocks actually scanned.
@@ -672,27 +672,36 @@ experiment script computes them.
   - Typo-level bug reports are trimmed.
   - Untested explanations are marked as likely.
   - The time log is filled in.
-- Done: `README.md` summarises the results with the four figures, what is compared, how to run
-  it, reproducibility and limitations. It uses the pruner names from the code.
+
+### 17:27: README and final checks
+
+- Done: `README.md`, with these sections:
+  - **Summary:** the six main findings.
+  - **Main results:** one section per experiment (E1–E4), each with its figure, a table of the
+    main numbers and an interpretation.
+  - **Conclusions:** the verdict on each hypothesis, five practical conclusions, and how the
+    predictions did.
+  - **What is compared, how to run it, reproducibility, repository layout and limitations.**
+  - **Next steps.**
+
+  It uses the pruner names from the code.
+- Accuracy: all numbers come from sections 3, 8 and 9. Explanations that were not tested (the
+  early stop at `rho` = 0.8, the long tail) are marked "likely … (not checked)", as in section 9.
+  The tenant-then-cluster layout is a suggestion that was not tested, and the README says so.
+- Next steps were reordered by what the results left open (section 11 keeps the original list):
+  - **Up:** the tenant-then-cluster layout and tighter similarity metadata, because H2 and E3 left
+    the layout conflict and the loose bound as the main open problems. The cost model also moved
+    up, because E2 showed in-memory latency hides the saving.
+  - **Down and narrowed:** Bloom filters. E1 shows an exact tenant set beats the zone map only when
+    tenants are clustered but not contiguous.
+  - **New:** finishing the reduced grid, testing the two unchecked explanations, harder data,
+    cluster-aligned blocks, and a check on real object storage.
 - Done: the notes file is renamed `NOTES.md` and committed with `results/` and `plots/` from the
-  run on commit `7dcef8e`. All 252 tests pass, and every link in the README points to a file in
-  the repository.
+  run on commit `7dcef8e`. All 252 tests pass, and every link and anchor in the README resolves.
 - Final check (D10): a fresh clone of commit `2afc6c8`, installed with `uv sync --frozen`, passed
   all 252 tests with the README's commands. A full run of `experiments.py` in that clone gave
   results identical to the committed ones for all five files (run 3, section 10). Every D10 check
   has now passed.
-
-### 17:21: README results and conclusions
-
-- Done: the README now has the main results, interpretations and conclusions.
-  - A short summary comes first.
-  - Each experiment (E1–E4) has its own section with its figure, a table of the main numbers and
-    an interpretation.
-  - A conclusions section gives the verdict on each hypothesis, five practical conclusions, and
-    how the predictions did.
-- All numbers come from sections 3, 8 and 9. Explanations that were not tested (the early stop at
-  `rho` = 0.8, the long tail) are marked "likely … (not checked)", as in section 9. The
-  tenant-then-cluster layout is a suggestion that was not tested, and the README says so.
 
 ---
 
@@ -918,3 +927,23 @@ Ideas outside the time budget, collected as they come up:
 - **Cost model:** invocations × (fetch latency + bytes / bandwidth + compute), to choose B per
   workload.
 - **Post-filter baseline,** skewed query popularity (hot blocks), real embeddings with real metadata.
+
+**Revised after the results (17:27, with the README).** The list above is kept as first
+written. The README's "Next steps" section reorders it by what the experiments left open:
+
+1. **Close the open questions:**
+   - run the rest of the grid (E3 at `rho` = 0.5 and 1.0, every m; E4 at 2k and 10k);
+   - test the two unchecked explanations (section 9);
+   - rerun on harder data (`noise_std` = 1.0).
+2. **Resolve the layout conflict (H2):**
+   - a tenant-then-cluster layout, moved up from the list above;
+   - tighter similarity metadata, moved up because E3 showed the single-centroid bound is too
+     loose;
+   - cluster-aligned, variable-size blocks (new).
+3. **Measure the real cost:** the cost model (moved up, because E2 showed in-memory latency hides
+   the saving), choosing B per workload (E4), and a check on real object storage (new).
+4. **Broaden the setting:**
+   - streaming ingestion (E5) and an ANN index per block;
+   - baselines and realism;
+   - Bloom filters, moved down and narrowed: E1 shows they matter only when tenants are
+     clustered but not contiguous. On a tenant-sorted layout the zone map is enough.

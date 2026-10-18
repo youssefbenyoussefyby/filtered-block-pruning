@@ -314,4 +314,67 @@ NOTES.md              hypotheses, decisions, logs, results, surprises
   depends on `rho` is only partly tested. E4 ran three block sizes.
 - **One machine** (Windows 11) and one run configuration.
 
-Next steps are listed in [NOTES.md](NOTES.md), section 11.
+## Next steps
+
+This list was rethought after the results. It is ordered by what the experiments left open. The
+first group needs no new code, and later groups build on the earlier ones.
+
+### 1. Close the open questions of this run
+
+- **Run the rest of the grid.** Run E3 at `rho` = 0.5 and 1.0 with every m from 1 to 40, and E4 at
+  B = 2k and 10k. H3's claim that the trade-off depends on `rho` is only half tested; this
+  finishes it, with one more run of `experiments.py`.
+- **Test the two unchecked explanations.**
+  - **Early stop:** record the 10th-best distance and each block's lower bound at `rho` = 0 and
+    0.8. If the explanation is right, the 10th-best distance is clearly smaller at 0.8.
+  - **Long tail:** for queries still missing rows after 8 blocks, find where the blocks holding
+    those rows rank in centroid order, and how many true clusters those blocks mix.
+- **Try harder data.** Rerun with `noise_std` = 1.0 so that clusters overlap. This shows whether
+  centroid ranking still finds 90% of the top-10 in 3–4 blocks, since the current data is the
+  easy case.
+
+### 2. Resolve the layout conflict (H2)
+
+The main finding is that no layout gives both filter locality and similarity locality. Three ways
+to try to get both:
+
+- **A tenant-then-cluster layout:** sort by tenant, then by k-means cluster inside each tenant.
+  - **Expected:** the same tenant pruning as `tenant_sorted` (E1), plus useful centroid ranking
+    inside large tenants, which span up to 10 blocks with Zipf tenants.
+  - **Effort:** a short change to `src/layout.py`.
+  - **How to compare:** against `tenant_sorted` in E3, on queries that include a large tenant.
+- **Tighter similarity metadata.** The single centroid and radius gives a lower bound of 0 for
+  most blocks, because each block mixes about 2 clusters.
+  - **Options:** several sub-centroids per block (k-means inside the block), or one centroid and
+    radius per (block, tenant).
+  - **Success means:** the bound is above 0 for most blocks, so the early stop and the bound order
+    start to prune.
+  - **Cost:** more metadata, and the centroid is already 96% of it (E4).
+- **Cluster-aligned blocks:** let block boundaries follow k-means clusters (variable-size
+  partitions) instead of cutting every 5,000 rows. This gives tighter blocks, at the cost of
+  uneven block sizes.
+
+### 3. Measure the cost that matters (E2, E4)
+
+In-memory latency hides most of the saving (E2), and no single block size is best (E4).
+
+- **Build a cost model.** Price each query as invocations × (fetch latency + bytes ÷ bandwidth +
+  compute), using measured or published numbers for serverless functions and object storage, and
+  recompute E1 and E4 in that unit.
+- **Choose B per workload.** With the cost model, pick the block size that is cheapest for a given
+  mix of selectivities. Also test whether small and large tenants should get different block
+  sizes.
+- **Check the model on real storage.** Run the same queries against blocks stored in an object
+  store, for example MinIO on a laptop.
+
+### 4. Broaden the setting
+
+- **Streaming ingestion (E5):** how fast tenant pruning decays as unsorted batches arrive, and how
+  often compaction must re-sort them.
+- **Metadata for many tenants:** E1 shows that the exact tenant set beats the zone map only when
+  tenants are clustered but not contiguous (`vector_clustered` at `rho` = 1.0: 17% of blocks
+  against 88%). That is the case where a Bloom filter matters, because the exact bitmap grows to
+  125 KB per block at 1 million tenants. On a tenant-sorted layout the 8-byte zone map is enough.
+- **An ANN index per block** (HNSW or IVF), and how the filter interacts with it.
+- **Baselines and realism:** a post-filtering baseline, skewed query popularity (hot blocks), range
+  and multi-attribute filters, and real embeddings with real metadata.
